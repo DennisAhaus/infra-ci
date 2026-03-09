@@ -82,9 +82,9 @@ jobs:
         attempts: 2
         file: infra-ci/ci/tasks/infra-nginx-deploy.yml
         params:
-          SSH_HOST: ((apm_ssh_host))
-          SSH_USER: ((apm_ssh_user))
-          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          SSH_HOST: ((infra_ssh_host))
+          SSH_USER: ((infra_ssh_user))
+          SSH_PRIVATE_KEY: ((infra_ssh_private_key))
           DEPLOY_DIR: /opt/infra-nginx
 
   - name: cert-renew-check
@@ -98,9 +98,9 @@ jobs:
       - task: check-and-renew-cert
         file: infra-ci/ci/tasks/infra-cert-renew-check.yml
         params:
-          SSH_HOST: ((apm_ssh_host))
-          SSH_USER: ((apm_ssh_user))
-          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          SSH_HOST: ((infra_ssh_host))
+          SSH_USER: ((infra_ssh_user))
+          SSH_PRIVATE_KEY: ((infra_ssh_private_key))
           CERTBOT_EMAIL: ((infra_certbot_email))
           CERTBOT_DOMAINS: ((infra_certbot_domains))
 
@@ -113,8 +113,8 @@ jobs:
       - task: issue-certificate
         file: infra-ci/ci/tasks/infra-cert-bootstrap.yml
         params:
-          SSH_HOST: ((apm_ssh_host))
-          SSH_USER: ((apm_ssh_user))
-          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          SSH_HOST: ((infra_ssh_host))
+          SSH_USER: ((infra_ssh_user))
+          SSH_PRIVATE_KEY: ((infra_ssh_private_key))
           CERTBOT_EMAIL: ((infra_certbot_email))
           CERTBOT_DOMAINS: ((infra_certbot_domains))

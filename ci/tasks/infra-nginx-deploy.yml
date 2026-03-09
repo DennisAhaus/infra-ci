@@ -67,6 +67,9 @@ run:
         ssh ${SSH_OPTS} "${SSH_TARGET}" "docker network inspect '${net}' >/dev/null 2>&1 || docker network create '${net}' >/dev/null"
       done
 
+      # During migration from old APM infra layout, apm-nginx may still bind :80/:443.
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker rm -f apm-nginx >/dev/null 2>&1 || true"
+
       ssh ${SSH_OPTS} "${SSH_TARGET}" "docker rm -f infra-nginx >/dev/null 2>&1 || true"
       ssh ${SSH_OPTS} "${SSH_TARGET}" "cd ${DEPLOY_DIR} && docker compose -p infra-nginx -f docker-compose.nginx.yml up -d --force-recreate"
 
