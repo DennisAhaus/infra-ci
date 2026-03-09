@@ -7,6 +7,7 @@
 # Domains proxied:
 #   - concourse.dtsoft.cloud -> host.docker.internal:8090
 #   - auth.dtsoft.cloud      -> iam-keycloak:8080
+#   - auth.silora.chat       -> iam-keycloak:8080
 #   - vault.dtsoft.cloud     -> vault:8200
 #   - monitor.dtsoft.cloud   -> grafana:3000
 #   - kibana.dtsoft.cloud    -> kibana:5601

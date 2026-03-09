@@ -57,7 +57,7 @@ run:
             -keyout /etc/letsencrypt/live/infra-edge/privkey.pem \
             -out /etc/letsencrypt/live/infra-edge/fullchain.pem \
             -subj "/CN=concourse.dtsoft.cloud" \
-            -addext "subjectAltName=DNS:concourse.dtsoft.cloud,DNS:auth.dtsoft.cloud,DNS:vault.dtsoft.cloud,DNS:monitor.dtsoft.cloud,DNS:kibana.dtsoft.cloud"
+            -addext "subjectAltName=DNS:concourse.dtsoft.cloud,DNS:auth.dtsoft.cloud,DNS:auth.silora.chat,DNS:vault.dtsoft.cloud,DNS:monitor.dtsoft.cloud,DNS:kibana.dtsoft.cloud"
           cp /etc/letsencrypt/live/infra-edge/fullchain.pem /etc/letsencrypt/live/infra-edge/chain.pem
         '"
       fi
