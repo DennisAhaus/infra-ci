@@ -55,7 +55,7 @@ jobs:
                 apk add --no-cache openssl
 
                 cp infra-ci/ci/templates/infra-nginx.conf /etc/nginx/nginx.conf
-                echo "127.0.0.1 iam-keycloak vault grafana kibana" >> /etc/hosts
+                echo "127.0.0.1 iam-keycloak vault grafana kibana host.docker.internal" >> /etc/hosts
 
                 mkdir -p /etc/letsencrypt/live/dtsoft.cloud
                 openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
