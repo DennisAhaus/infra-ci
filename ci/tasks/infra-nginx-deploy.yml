@@ -45,12 +45,21 @@ run:
       ssh ${SSH_OPTS} "${SSH_TARGET}" "docker volume inspect infra-certbot-certs >/dev/null 2>&1 || docker volume create infra-certbot-certs >/dev/null"
       ssh ${SSH_OPTS} "${SSH_TARGET}" "docker volume inspect infra-certbot-www >/dev/null 2>&1 || docker volume create infra-certbot-www >/dev/null"
 
-      if ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec 'apk add --no-cache openssl >/dev/null && test -f /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/privkey.pem && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:concourse.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:auth.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:vault.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:monitor.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:kibana.dtsoft.cloud'"; then
-        echo "Certificate with required SANs found in infra-certbot-certs volume"
+      # Ensure nginx can always start: bootstrap a short-lived self-signed cert if none exists yet.
+      if ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec 'test -f /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/privkey.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/chain.pem'"; then
+        echo "Certificate files already exist in infra-certbot-certs volume"
       else
-        echo "ERROR: Infra managed certificate missing or SANs incomplete in infra-certbot-certs volume"
-        echo "Run infra-nginx/cert-bootstrap before deploying infra nginx."
-        exit 1
+        echo "No certificate found. Creating temporary self-signed certificate for nginx bootstrap."
+        ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
+          apk add --no-cache openssl >/dev/null
+          mkdir -p /etc/letsencrypt/live/dtsoft.cloud
+          openssl req -x509 -nodes -days 7 -newkey rsa:2048 \
+            -keyout /etc/letsencrypt/live/dtsoft.cloud/privkey.pem \
+            -out /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem \
+            -subj "/CN=dtsoft.cloud" \
+            -addext "subjectAltName=DNS:dtsoft.cloud,DNS:www.dtsoft.cloud,DNS:concourse.dtsoft.cloud,DNS:auth.dtsoft.cloud,DNS:vault.dtsoft.cloud,DNS:monitor.dtsoft.cloud,DNS:kibana.dtsoft.cloud"
+          cp /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem /etc/letsencrypt/live/dtsoft.cloud/chain.pem
+        '"
       fi
 
       ssh ${SSH_OPTS} "${SSH_TARGET}" "docker rm -f infra-nginx >/dev/null 2>&1 || true"

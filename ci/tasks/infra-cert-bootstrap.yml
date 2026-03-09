@@ -34,30 +34,51 @@ run:
         DOMAIN_FLAGS="${DOMAIN_FLAGS} -d ${domain}"
       done
 
-      echo "=== Requesting infra certificate for: ${CERTBOT_DOMAINS} ==="
+      echo "=== Checking current infra certificate state ==="
 
-      ssh ${SSH_OPTS} "${SSH_TARGET}" \
-        "docker run --rm \
-          -v infra-certbot-certs:/etc/letsencrypt \
-          alpine:3.21 sh -ec '
-            if [ -e /etc/letsencrypt/live/dtsoft.cloud ] || [ -e /etc/letsencrypt/archive/dtsoft.cloud ] || [ -f /etc/letsencrypt/renewal/dtsoft.cloud.conf ]; then
-              rm -rf /etc/letsencrypt/live/dtsoft.cloud
-              rm -rf /etc/letsencrypt/archive/dtsoft.cloud
-              rm -f /etc/letsencrypt/renewal/dtsoft.cloud.conf
-            fi
-          '"
+      CERT_META=$(ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
+          apk add --no-cache openssl >/dev/null
+          cert=/etc/letsencrypt/live/dtsoft.cloud/fullchain.pem
+          if [ ! -f \"$cert\" ]; then
+            echo missing
+            exit 0
+          fi
+          issuer=$(openssl x509 -in \"$cert\" -noout -issuer | sed \"s/^issuer=//\")
+          subject=$(openssl x509 -in \"$cert\" -noout -subject | sed \"s/^subject=//\")
+          if [ \"$issuer\" = \"$subject\" ]; then
+            echo self-signed
+          else
+            echo trusted
+          fi
+          if openssl x509 -in \"$cert\" -checkend 2419200 -noout >/dev/null 2>&1; then
+            echo gt28d
+          else
+            echo le28d
+          fi
+        '")
 
-      ssh ${SSH_OPTS} "${SSH_TARGET}" \
-        "docker run --rm \
-          -v infra-certbot-certs:/etc/letsencrypt \
-          -v infra-certbot-www:/var/www/certbot \
-          certbot/certbot:latest certonly \
-          --webroot --webroot-path /var/www/certbot \
-          --email ${CERTBOT_EMAIL} \
-          --agree-tos --no-eff-email \
-          --cert-name dtsoft.cloud \
-          --force-renewal \
-          ${DOMAIN_FLAGS}"
+      CERT_STATE="$(printf '%s\n' "$CERT_META" | sed -n '1p')"
+      CERT_EXPIRY="$(printf '%s\n' "$CERT_META" | sed -n '2p')"
+
+      echo "Current cert state: ${CERT_STATE}, expiry window: ${CERT_EXPIRY}"
+
+      if [ "$CERT_STATE" = "trusted" ] && [ "$CERT_EXPIRY" = "gt28d" ]; then
+        echo "Trusted cert valid for > 28 days. Nothing to do."
+      else
+        echo "Requesting/renewing certificate from Let's Encrypt for: ${CERTBOT_DOMAINS}"
+        ssh ${SSH_OPTS} "${SSH_TARGET}" \
+          "docker run --rm \
+            -v infra-certbot-certs:/etc/letsencrypt \
+            -v infra-certbot-www:/var/www/certbot \
+            certbot/certbot:latest certonly \
+            --webroot --webroot-path /var/www/certbot \
+            --email ${CERTBOT_EMAIL} \
+            --agree-tos --no-eff-email \
+            --cert-name dtsoft.cloud \
+            --force-renewal \
+            ${DOMAIN_FLAGS}"
+      fi
 
       ssh ${SSH_OPTS} "${SSH_TARGET}" \
         "docker run --rm \

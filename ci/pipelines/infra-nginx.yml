@@ -101,6 +101,8 @@ jobs:
           SSH_HOST: ((apm_ssh_host))
           SSH_USER: ((apm_ssh_user))
           SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          CERTBOT_EMAIL: ((infra_certbot_email))
+          CERTBOT_DOMAINS: ((infra_certbot_domains))
 
   - name: cert-bootstrap
     serial: true

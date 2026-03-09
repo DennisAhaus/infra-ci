@@ -10,6 +10,8 @@ params:
   SSH_HOST: ""
   SSH_USER: ""
   SSH_PRIVATE_KEY: ""
+  CERTBOT_EMAIL: ""
+  CERTBOT_DOMAINS: ""
 
 inputs:
   - name: infra-ci
@@ -27,23 +29,54 @@ run:
       SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
       SSH_TARGET="${SSH_USER}@${SSH_HOST}"
 
-      ssh ${SSH_OPTS} "${SSH_TARGET}" \
-        "docker run --rm \
-          -v infra-certbot-certs:/etc/letsencrypt \
-          -v infra-certbot-www:/var/www/certbot \
-          certbot/certbot:latest certificates"
+      DOMAIN_FLAGS=""
+      for domain in ${CERTBOT_DOMAINS}; do
+        DOMAIN_FLAGS="${DOMAIN_FLAGS} -d ${domain}"
+      done
 
-      RENEW_OUTPUT=$(ssh ${SSH_OPTS} "${SSH_TARGET}" \
-        "docker run --rm \
-          -v infra-certbot-certs:/etc/letsencrypt \
-          -v infra-certbot-www:/var/www/certbot \
-          certbot/certbot:latest renew --webroot --webroot-path /var/www/certbot 2>&1") || true
-      echo "$RENEW_OUTPUT"
+      CERT_META=$(ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
+          apk add --no-cache openssl >/dev/null
+          cert=/etc/letsencrypt/live/dtsoft.cloud/fullchain.pem
+          if [ ! -f \"$cert\" ]; then
+            echo missing
+            exit 0
+          fi
+          issuer=$(openssl x509 -in \"$cert\" -noout -issuer | sed \"s/^issuer=//\")
+          subject=$(openssl x509 -in \"$cert\" -noout -subject | sed \"s/^subject=//\")
+          if [ \"$issuer\" = \"$subject\" ]; then
+            echo self-signed
+          else
+            echo trusted
+          fi
+          if openssl x509 -in \"$cert\" -checkend 2419200 -noout >/dev/null 2>&1; then
+            echo gt28d
+          else
+            echo le28d
+          fi
+        '")
 
-      if echo "$RENEW_OUTPUT" | grep -q "Congratulations\\|renewed"; then
-        ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -s reload"
+      CERT_STATE="$(printf '%s\n' "$CERT_META" | sed -n '1p')"
+      CERT_EXPIRY="$(printf '%s\n' "$CERT_META" | sed -n '2p')"
+
+      echo "Current cert state: ${CERT_STATE}, expiry window: ${CERT_EXPIRY}"
+
+      if [ "$CERT_STATE" = "trusted" ] && [ "$CERT_EXPIRY" = "gt28d" ]; then
+        echo "Trusted cert valid for > 28 days. No renewal required."
       else
-        echo "=== No renewal needed ==="
+        echo "Certificate missing/self-signed/expiring <= 28 days. Running certbot certonly."
+        ssh ${SSH_OPTS} "${SSH_TARGET}" \
+          "docker run --rm \
+            -v infra-certbot-certs:/etc/letsencrypt \
+            -v infra-certbot-www:/var/www/certbot \
+            certbot/certbot:latest certonly \
+            --webroot --webroot-path /var/www/certbot \
+            --email ${CERTBOT_EMAIL} \
+            --agree-tos --no-eff-email \
+            --cert-name dtsoft.cloud \
+            --force-renewal \
+            ${DOMAIN_FLAGS}"
+        ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -s reload"
       fi
 
       ssh ${SSH_OPTS} "${SSH_TARGET}" \
