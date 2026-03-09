@@ -1,0 +1,84 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: alpine
+    tag: "3.21"
+
+params:
+  SSH_HOST: ""
+  SSH_USER: ""
+  SSH_PRIVATE_KEY: ""
+  DEPLOY_DIR: /opt/infra-nginx
+
+inputs:
+  - name: infra-ci
+
+run:
+  path: sh
+  args:
+    - -ec
+    - |
+      set -o pipefail
+      apk add --no-cache openssh-client docker-cli curl
+
+      SSH_KEY_FILE="$(mktemp)"
+      SSH_KNOWN_HOSTS_FILE="$(mktemp)"
+      printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+      chmod 600 "$SSH_KEY_FILE"
+      ssh-keyscan -H "$SSH_HOST" > "$SSH_KNOWN_HOSTS_FILE"
+      chmod 600 "$SSH_KNOWN_HOSTS_FILE"
+      SSH_OPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=${SSH_KNOWN_HOSTS_FILE} -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
+      SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+      TEMPLATE_DIR="infra-ci/ci/templates"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "mkdir -p ${DEPLOY_DIR}"
+
+      scp ${SSH_OPTS} "${TEMPLATE_DIR}/infra-nginx.conf" "${SSH_TARGET}:${DEPLOY_DIR}/nginx.conf"
+
+      sed \
+        -e "s|__DEPLOY_DIR__|${DEPLOY_DIR}|g" \
+        "${TEMPLATE_DIR}/infra-docker-compose.nginx.yml" \
+        | ssh ${SSH_OPTS} "${SSH_TARGET}" "cat > ${DEPLOY_DIR}/docker-compose.nginx.yml"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker volume inspect infra-certbot-certs >/dev/null 2>&1 || docker volume create infra-certbot-certs >/dev/null"
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker volume inspect infra-certbot-www >/dev/null 2>&1 || docker volume create infra-certbot-www >/dev/null"
+
+      if ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec 'apk add --no-cache openssl >/dev/null && test -f /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/privkey.pem && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:concourse.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:auth.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:vault.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:monitor.dtsoft.cloud && openssl x509 -in /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem -noout -ext subjectAltName | grep -q DNS:kibana.dtsoft.cloud'"; then
+        echo "Certificate with required SANs found in infra-certbot-certs volume"
+      else
+        echo "ERROR: Infra managed certificate missing or SANs incomplete in infra-certbot-certs volume"
+        echo "Run infra-nginx/cert-bootstrap before deploying infra nginx."
+        exit 1
+      fi
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker rm -f infra-nginx >/dev/null 2>&1 || true"
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "cd ${DEPLOY_DIR} && docker compose -p infra-nginx -f docker-compose.nginx.yml up -d --force-recreate"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" '
+        set -e
+        for i in $(seq 1 30); do
+          state="$(docker inspect -f "{{.State.Status}}" infra-nginx 2>/dev/null || true)"
+          if [ "$state" = "running" ]; then
+            echo "infra-nginx is running"
+            exit 0
+          fi
+          sleep 2
+        done
+
+        echo "ERROR: infra-nginx did not reach running state"
+        docker ps -a --filter name=infra-nginx || true
+        docker logs --tail 200 infra-nginx || true
+        exit 1
+      '
+
+      for net in vault_vault iam-keycloak-net grafana-net; do
+        ssh ${SSH_OPTS} "${SSH_TARGET}" "docker network connect '${net}' infra-nginx 2>/dev/null || true"
+      done
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -t"
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -s reload"
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "curl -sf http://localhost/health"
+
+      echo "=== Infra nginx deploy complete ==="

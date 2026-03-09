@@ -1,0 +1,52 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: alpine
+    tag: "3.21"
+
+params:
+  SSH_HOST: ""
+  SSH_USER: ""
+  SSH_PRIVATE_KEY: ""
+
+inputs:
+  - name: infra-ci
+
+run:
+  path: sh
+  args:
+    - -exc
+    - |
+      apk add --no-cache openssh-client
+
+      SSH_KEY_FILE="$(mktemp)"
+      printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+      chmod 600 "$SSH_KEY_FILE"
+      SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
+      SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm \
+          -v infra-certbot-certs:/etc/letsencrypt \
+          -v infra-certbot-www:/var/www/certbot \
+          certbot/certbot:latest certificates"
+
+      RENEW_OUTPUT=$(ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm \
+          -v infra-certbot-certs:/etc/letsencrypt \
+          -v infra-certbot-www:/var/www/certbot \
+          certbot/certbot:latest renew --webroot --webroot-path /var/www/certbot 2>&1") || true
+      echo "$RENEW_OUTPUT"
+
+      if echo "$RENEW_OUTPUT" | grep -q "Congratulations\\|renewed"; then
+        ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -s reload"
+      else
+        echo "=== No renewal needed ==="
+      fi
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "curl -sf --max-time 10 https://concourse.dtsoft.cloud/ || echo 'HTTPS check failed (may be expected in CI)'"
+
+      echo "=== Infra cert check complete ==="

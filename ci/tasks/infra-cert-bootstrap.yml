@@ -1,0 +1,70 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: alpine
+    tag: "3.21"
+
+params:
+  SSH_HOST: ""
+  SSH_USER: ""
+  SSH_PRIVATE_KEY: ""
+  CERTBOT_EMAIL: ""
+  CERTBOT_DOMAINS: ""
+
+inputs:
+  - name: infra-ci
+
+run:
+  path: sh
+  args:
+    - -exc
+    - |
+      apk add --no-cache openssh-client
+
+      SSH_KEY_FILE="$(mktemp)"
+      printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+      chmod 600 "$SSH_KEY_FILE"
+      SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
+      SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+
+      DOMAIN_FLAGS=""
+      for domain in ${CERTBOT_DOMAINS}; do
+        DOMAIN_FLAGS="${DOMAIN_FLAGS} -d ${domain}"
+      done
+
+      echo "=== Requesting infra certificate for: ${CERTBOT_DOMAINS} ==="
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm \
+          -v infra-certbot-certs:/etc/letsencrypt \
+          alpine:3.21 sh -ec '
+            if [ -e /etc/letsencrypt/live/dtsoft.cloud ] || [ -e /etc/letsencrypt/archive/dtsoft.cloud ] || [ -f /etc/letsencrypt/renewal/dtsoft.cloud.conf ]; then
+              rm -rf /etc/letsencrypt/live/dtsoft.cloud
+              rm -rf /etc/letsencrypt/archive/dtsoft.cloud
+              rm -f /etc/letsencrypt/renewal/dtsoft.cloud.conf
+            fi
+          '"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm \
+          -v infra-certbot-certs:/etc/letsencrypt \
+          -v infra-certbot-www:/var/www/certbot \
+          certbot/certbot:latest certonly \
+          --webroot --webroot-path /var/www/certbot \
+          --email ${CERTBOT_EMAIL} \
+          --agree-tos --no-eff-email \
+          --cert-name dtsoft.cloud \
+          --force-renewal \
+          ${DOMAIN_FLAGS}"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" \
+        "docker run --rm \
+          -v infra-certbot-certs:/etc/letsencrypt \
+          -v infra-certbot-www:/var/www/certbot \
+          certbot/certbot:latest certificates"
+
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker exec infra-nginx nginx -s reload"
+
+      echo "=== Infra certificate bootstrap complete ==="

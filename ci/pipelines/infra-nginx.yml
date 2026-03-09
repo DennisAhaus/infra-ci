@@ -1,0 +1,118 @@
+##################################################################################################
+# Infra Nginx + Certbot Pipeline
+#
+# Manages the infrastructure reverse proxy on the infra host and the
+# certificate lifecycle for infrastructure domains.
+#
+# Domains proxied:
+#   - dtsoft.cloud (redirect to https://apm.dtsoft.cloud)
+#   - concourse.dtsoft.cloud -> host.docker.internal:8090
+#   - auth.dtsoft.cloud      -> iam-keycloak:8080
+#   - vault.dtsoft.cloud     -> vault:8200
+#   - monitor.dtsoft.cloud   -> grafana:3000
+#   - kibana.dtsoft.cloud    -> kibana:5601
+##################################################################################################
+
+resources:
+  - name: infra-ci
+    type: git
+    source:
+      uri: git@github.com:DennisAhaus/infra-ci.git
+      branch: master
+      private_key: ((github_private_key))
+
+  - name: weekly
+    type: time
+    source:
+      start: "3:00 AM"
+      stop: "4:00 AM"
+      days: [Sunday]
+      location: Europe/Berlin
+
+jobs:
+  - name: validate-nginx-config
+    serial: true
+    build_log_retention:
+      builds: 50
+    plan:
+      - get: infra-ci
+        trigger: true
+      - task: validate-config
+        config:
+          platform: linux
+          image_resource:
+            type: registry-image
+            source:
+              repository: nginx
+              tag: alpine
+          inputs:
+            - name: infra-ci
+          run:
+            path: sh
+            args:
+              - -exc
+              - |
+                apk add --no-cache openssl
+
+                cp infra-ci/ci/templates/infra-nginx.conf /etc/nginx/nginx.conf
+                echo "127.0.0.1 iam-keycloak vault grafana kibana" >> /etc/hosts
+
+                mkdir -p /etc/letsencrypt/live/dtsoft.cloud
+                openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                  -subj '/CN=test' \
+                  -keyout /etc/letsencrypt/live/dtsoft.cloud/privkey.pem \
+                  -out /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem 2>/dev/null
+                cp /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem \
+                   /etc/letsencrypt/live/dtsoft.cloud/chain.pem
+
+                mkdir -p /var/www/certbot
+
+                nginx -t
+                echo "=== infra nginx config validation PASSED ==="
+
+  - name: nginx-deploy
+    serial: true
+    build_log_retention:
+      builds: 50
+    plan:
+      - get: infra-ci
+        trigger: true
+        passed: [validate-nginx-config]
+      - task: deploy-nginx-config
+        attempts: 2
+        file: infra-ci/ci/tasks/infra-nginx-deploy.yml
+        params:
+          SSH_HOST: ((apm_ssh_host))
+          SSH_USER: ((apm_ssh_user))
+          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          DEPLOY_DIR: /opt/infra-nginx
+
+  - name: cert-renew-check
+    serial: true
+    build_log_retention:
+      builds: 50
+    plan:
+      - get: weekly
+        trigger: true
+      - get: infra-ci
+      - task: check-and-renew-cert
+        file: infra-ci/ci/tasks/infra-cert-renew-check.yml
+        params:
+          SSH_HOST: ((apm_ssh_host))
+          SSH_USER: ((apm_ssh_user))
+          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+
+  - name: cert-bootstrap
+    serial: true
+    build_log_retention:
+      builds: 10
+    plan:
+      - get: infra-ci
+      - task: issue-certificate
+        file: infra-ci/ci/tasks/infra-cert-bootstrap.yml
+        params:
+          SSH_HOST: ((apm_ssh_host))
+          SSH_USER: ((apm_ssh_user))
+          SSH_PRIVATE_KEY: ((apm_ssh_private_key))
+          CERTBOT_EMAIL: ((infra_certbot_email))
+          CERTBOT_DOMAINS: ((infra_certbot_domains))

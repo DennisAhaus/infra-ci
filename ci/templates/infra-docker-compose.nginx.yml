@@ -1,0 +1,43 @@
+services:
+  infra-nginx:
+    container_name: infra-nginx
+    image: nginx:alpine
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:172.17.0.1"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - __DEPLOY_DIR__/nginx.conf:/etc/nginx/nginx.conf:ro
+      - infra-certbot-certs:/etc/letsencrypt:ro
+      - infra-certbot-www:/var/www/certbot:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - iam-keycloak-net
+      - vault-net
+      - grafana-net
+
+volumes:
+  infra-certbot-certs:
+    external: true
+    name: infra-certbot-certs
+  infra-certbot-www:
+    external: true
+    name: infra-certbot-www
+
+networks:
+  iam-keycloak-net:
+    external: true
+    name: iam-keycloak-net
+  vault-net:
+    external: true
+    name: vault_vault
+  grafana-net:
+    external: true
+    name: grafana-net
