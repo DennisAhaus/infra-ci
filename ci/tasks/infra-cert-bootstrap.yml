@@ -40,18 +40,18 @@ run:
         "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
           apk add --no-cache openssl >/dev/null
           cert=/etc/letsencrypt/live/infra-edge/fullchain.pem
-          if [ ! -f \"$cert\" ]; then
+          if [ ! -f \"\$cert\" ]; then
             echo missing
             exit 0
           fi
-          issuer=$(openssl x509 -in \"$cert\" -noout -issuer | sed \"s/^issuer=//\")
-          subject=$(openssl x509 -in \"$cert\" -noout -subject | sed \"s/^subject=//\")
-          if [ \"$issuer\" = \"$subject\" ]; then
+          issuer=$(openssl x509 -in \"\$cert\" -noout -issuer | sed \"s/^issuer=//\")
+          subject=$(openssl x509 -in \"\$cert\" -noout -subject | sed \"s/^subject=//\")
+          if [ \"\$issuer\" = \"\$subject\" ]; then
             echo self-signed
           else
             echo trusted
           fi
-          if openssl x509 -in \"$cert\" -checkend 2419200 -noout >/dev/null 2>&1; then
+          if openssl x509 -in \"\$cert\" -checkend 2419200 -noout >/dev/null 2>&1; then
             echo gt28d
           else
             echo le28d
@@ -75,6 +75,7 @@ run:
             --webroot --webroot-path /var/www/certbot \
             --email ${CERTBOT_EMAIL} \
             --agree-tos --no-eff-email \
+            --non-interactive \
             --cert-name infra-edge \
             --force-renewal \
             ${DOMAIN_FLAGS}"
