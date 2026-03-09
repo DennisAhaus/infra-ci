@@ -46,19 +46,19 @@ run:
       ssh ${SSH_OPTS} "${SSH_TARGET}" "docker volume inspect infra-certbot-www >/dev/null 2>&1 || docker volume create infra-certbot-www >/dev/null"
 
       # Ensure nginx can always start: bootstrap a short-lived self-signed cert if none exists yet.
-      if ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec 'test -f /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/privkey.pem && test -f /etc/letsencrypt/live/dtsoft.cloud/chain.pem'"; then
+      if ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec 'test -f /etc/letsencrypt/live/infra-edge/fullchain.pem && test -f /etc/letsencrypt/live/infra-edge/privkey.pem && test -f /etc/letsencrypt/live/infra-edge/chain.pem'"; then
         echo "Certificate files already exist in infra-certbot-certs volume"
       else
         echo "No certificate found. Creating temporary self-signed certificate for nginx bootstrap."
         ssh ${SSH_OPTS} "${SSH_TARGET}" "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
           apk add --no-cache openssl >/dev/null
-          mkdir -p /etc/letsencrypt/live/dtsoft.cloud
+          mkdir -p /etc/letsencrypt/live/infra-edge
           openssl req -x509 -nodes -days 7 -newkey rsa:2048 \
-            -keyout /etc/letsencrypt/live/dtsoft.cloud/privkey.pem \
-            -out /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem \
-            -subj "/CN=dtsoft.cloud" \
-            -addext "subjectAltName=DNS:dtsoft.cloud,DNS:www.dtsoft.cloud,DNS:concourse.dtsoft.cloud,DNS:auth.dtsoft.cloud,DNS:vault.dtsoft.cloud,DNS:monitor.dtsoft.cloud,DNS:kibana.dtsoft.cloud"
-          cp /etc/letsencrypt/live/dtsoft.cloud/fullchain.pem /etc/letsencrypt/live/dtsoft.cloud/chain.pem
+            -keyout /etc/letsencrypt/live/infra-edge/privkey.pem \
+            -out /etc/letsencrypt/live/infra-edge/fullchain.pem \
+            -subj "/CN=concourse.dtsoft.cloud" \
+            -addext "subjectAltName=DNS:concourse.dtsoft.cloud,DNS:auth.dtsoft.cloud,DNS:vault.dtsoft.cloud,DNS:monitor.dtsoft.cloud,DNS:kibana.dtsoft.cloud"
+          cp /etc/letsencrypt/live/infra-edge/fullchain.pem /etc/letsencrypt/live/infra-edge/chain.pem
         '"
       fi
 

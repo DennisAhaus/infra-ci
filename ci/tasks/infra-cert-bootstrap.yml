@@ -39,7 +39,7 @@ run:
       CERT_META=$(ssh ${SSH_OPTS} "${SSH_TARGET}" \
         "docker run --rm -v infra-certbot-certs:/etc/letsencrypt alpine:3.21 sh -ec '
           apk add --no-cache openssl >/dev/null
-          cert=/etc/letsencrypt/live/dtsoft.cloud/fullchain.pem
+          cert=/etc/letsencrypt/live/infra-edge/fullchain.pem
           if [ ! -f \"$cert\" ]; then
             echo missing
             exit 0
@@ -75,7 +75,7 @@ run:
             --webroot --webroot-path /var/www/certbot \
             --email ${CERTBOT_EMAIL} \
             --agree-tos --no-eff-email \
-            --cert-name dtsoft.cloud \
+            --cert-name infra-edge \
             --force-renewal \
             ${DOMAIN_FLAGS}"
       fi
