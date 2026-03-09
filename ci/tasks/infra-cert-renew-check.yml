@@ -42,8 +42,8 @@ run:
             echo missing
             exit 0
           fi
-          issuer=$(openssl x509 -in \"\$cert\" -noout -issuer | sed \"s/^issuer=//\")
-          subject=$(openssl x509 -in \"\$cert\" -noout -subject | sed \"s/^subject=//\")
+          issuer=\$(openssl x509 -in \"\$cert\" -noout -issuer | sed \"s/^issuer=//\")
+          subject=\$(openssl x509 -in \"\$cert\" -noout -subject | sed \"s/^subject=//\")
           if [ \"\$issuer\" = \"\$subject\" ]; then
             echo self-signed
           else
