@@ -29,6 +29,13 @@ resources:
       days: [Sunday]
       location: Europe/Berlin
 
+  - name: daily
+    type: time
+    source:
+      start: "2:00 AM"
+      stop: "3:00 AM"
+      location: Europe/Berlin
+
 jobs:
   - name: validate-nginx-config
     serial: true
@@ -118,3 +125,18 @@ jobs:
           SSH_PRIVATE_KEY: ((infra_ssh_private_key))
           CERTBOT_EMAIL: ((infra_certbot_email))
           CERTBOT_DOMAINS: ((infra_certbot_domains))
+
+  - name: docker-cleanup
+    serial: true
+    build_log_retention:
+      builds: 30
+    plan:
+      - get: daily
+        trigger: true
+      - get: infra-ci
+      - task: prune-docker-resources
+        file: infra-ci/ci/tasks/infra-docker-cleanup.yml
+        params:
+          SSH_HOST: ((infra_ssh_host))
+          SSH_USER: ((infra_ssh_user))
+          SSH_PRIVATE_KEY: ((infra_ssh_private_key))

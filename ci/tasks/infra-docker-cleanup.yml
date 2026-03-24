@@ -1,0 +1,49 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: alpine
+    tag: "3.21"
+
+params:
+  SSH_HOST: ""
+  SSH_USER: ""
+  SSH_PRIVATE_KEY: ""
+
+run:
+  path: sh
+  args:
+    - -ec
+    - |
+      set -o pipefail
+      apk add --no-cache openssh-client
+
+      SSH_KEY_FILE="$(mktemp)"
+      SSH_KNOWN_HOSTS_FILE="$(mktemp)"
+      printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
+      chmod 600 "$SSH_KEY_FILE"
+      ssh-keyscan -H "$SSH_HOST" > "$SSH_KNOWN_HOSTS_FILE"
+      chmod 600 "$SSH_KNOWN_HOSTS_FILE"
+      SSH_OPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=${SSH_KNOWN_HOSTS_FILE} -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
+      SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+
+      echo "=== Docker disk usage BEFORE cleanup ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker system df"
+
+      echo "=== Removing stopped containers ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker container prune -f"
+
+      echo "=== Removing unused images (not referenced by any container) ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker image prune -af"
+
+      echo "=== Removing unused networks ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker network prune -f"
+
+      echo "=== Docker disk usage AFTER cleanup ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "docker system df"
+
+      echo "=== Disk usage AFTER cleanup ==="
+      ssh ${SSH_OPTS} "${SSH_TARGET}" "df -h /dev/md1 2>/dev/null || df -h /"
+
+      echo "=== Docker cleanup DONE ==="
