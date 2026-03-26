@@ -22,7 +22,7 @@ single entry point; it routes to specialist agents automatically.
 
 | Agent               | Invoke with         | Responsibility                                              |
 |---------------------|---------------------|-------------------------------------------------------------|
-| Orchestrator        | `@infra-ci`         | Entry point – routes to all other agents                    |
+| Orchestrator        | `@orchestrator`     | Entry point – routes to all other agents                    |
 | Cert lifecycle      | `@cert-lifecycle`   | Nginx/certbot bootstrap, issuance, and renewal              |
 | Pipeline auditor    | `@pipeline-auditor` | Consistency audit, release gate, trigger policy             |
 | Fly deploy          | `@fly-deploy`       | `fly set-pipeline`, unpause, trigger, and verification      |
@@ -33,8 +33,10 @@ Agent files live in `.github/agents/`. Each agent reads its corresponding skill(
 `.github/skills/` before acting.
 
 ## Git publication defaults
-- For implementation work, agents should usually finalize by running
-	`git add -A`, committing, and pushing after successful validation.
+- For implementation work, agents should finalize by staging only files created
+	or modified in the current session (`git add <file1> <file2>`), committing,
+	and pushing after successful validation.
+- **NEVER** use `git add -A` or `git add .` — always use scoped file-level staging.
 - Skip commit/push when there is no diff, checks fail, auth is missing, or the
 	user explicitly asks not to publish.
 - Commit messages should be focused and non-interactive.

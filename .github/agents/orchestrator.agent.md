@@ -71,12 +71,21 @@ host `fly` and `vault` binaries over any repo-local copies.
 ## Plan management
 - For non-trivial features, bugs, or refactors: create or update
   `requirements/open/<topic-slug>/plan.md` before starting work.
-- Update the plan after each completed step so progress stays current.
-- Store closeout notes in `requirements/open/<topic-slug>/finished.md`.
+- Topic workspace contains exactly these files:
+  - `plan.md` — single source of truth
+  - `status.md` — current lane, active agent, next step
+  - `handoff.md` — overwritten after each phase (never accumulates)
+  - `finished.md` — written at closure only
+- Update `status.md` before each delegation and `handoff.md` after each phase.
+- Sub-agents write NO markdown files — Orchestrator owns all topic workspace markdown.
+- Update `requirements/_index.md` after every state change.
+- Store closeout notes in `requirements/open/<topic-slug>/finished.md` then move to `requirements/done/<topic-slug>/`.
 
 ## Git finalization policy
-- Default behavior: when work is complete and checks pass, run `git add -A`,
-  create a focused commit, and `git push`.
+- Default behavior: when work is complete and checks pass, stage only files
+  created or modified in this session (`git add <file1> <file2>`), create a
+  focused commit, and `git push`.
+- **NEVER** use `git add -A` or `git add .`; always use scoped file-level staging.
 - Use clear non-interactive commit messages, for example:
   `feat(agents): enforce default git finalization`.
 - Do not commit if there are no file changes.
