@@ -21,16 +21,39 @@ run:
     - -ec
     - |
       set -o pipefail
-      apk add --no-cache openssh-client docker-cli curl
+      apk add --no-cache openssh-client docker-cli curl jq
+
+      resolve_host_via_doh() {
+        host="$1"
+        if printf '%s' "$host" | grep -Eq '^[0-9]+(\.[0-9]+){3}$'; then
+          printf '%s\n' "$host"
+          return 0
+        fi
+
+        curl -fsSL \
+          --resolve dns.google:443:8.8.8.8 \
+          --resolve dns.google:443:8.8.4.4 \
+          "https://dns.google/resolve?name=${host}&type=A" \
+          | jq -r '.Answer[]? | select(.type == 1) | .data' \
+          | head -n 1
+      }
+
+      RESOLVED_SSH_HOST="$(resolve_host_via_doh "$SSH_HOST")"
+      if [ -z "$RESOLVED_SSH_HOST" ]; then
+        echo "ERROR: Could not resolve SSH host via DoH: $SSH_HOST" >&2
+        exit 1
+      fi
 
       SSH_KEY_FILE="$(mktemp)"
-      SSH_KNOWN_HOSTS_FILE="$(mktemp)"
+      cleanup() {
+        rm -f "$SSH_KEY_FILE"
+      }
+      trap cleanup EXIT
+
       printf '%s\n' "$SSH_PRIVATE_KEY" > "$SSH_KEY_FILE"
       chmod 600 "$SSH_KEY_FILE"
-      ssh-keyscan -H "$SSH_HOST" > "$SSH_KNOWN_HOSTS_FILE"
-      chmod 600 "$SSH_KNOWN_HOSTS_FILE"
-      SSH_OPTS="-o StrictHostKeyChecking=yes -o UserKnownHostsFile=${SSH_KNOWN_HOSTS_FILE} -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
-      SSH_TARGET="${SSH_USER}@${SSH_HOST}"
+      SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -i ${SSH_KEY_FILE}"
+      SSH_TARGET="${SSH_USER}@${RESOLVED_SSH_HOST}"
       TEMPLATE_DIR="infra-ci/ci/templates"
 
       ssh ${SSH_OPTS} "${SSH_TARGET}" "mkdir -p ${DEPLOY_DIR}"
